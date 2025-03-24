@@ -533,7 +533,13 @@ Eko 框架在浏览器环境中提供了一系列强大的工具，用于实现 
 
 #### browser_use 工具
 
-`browser_use` 是一个综合性浏览器控制工具，提供多种网页交互操作：
+`browser_use` 工具是 Eko 中最核心的浏览器交互组件，它通过实现 Tool 接口，为 AI 提供了与网页进行自然交互的能力。该工具实现了一个完整的浏览器操作系统，使 AI 能够像人类用户一样浏览网页、点击元素、输入文本和提取内容。
+
+在实现上，该工具利用 Chrome 扩展 API 与浏览器进行通信。核心是 execute 方法，根据传入的 action 参数执行不同的浏览器操作。当需要与页面元素交互时，工具会先通过 injectScript 将辅助脚本注入到网页中，然后使用 executeScript 在页面上下文中执行 JavaScript 代码。
+
+对于元素定位，工具采用 XPath 精确定位复杂 DOM 结构中的元素。在执行点击、输入等操作前，工具会先通过 `extractOperableElements` 提取页面可交互元素，这个函数首先使用 CSS 选择器提取所有标准交互元素（链接、按钮、输入框等），然后使用 TreeWalker 遍历 DOM 树找出短文本元素作为辅助信息。每个元素都被赋予唯一 ID 并转换为伪 HTML 结构来识别页面元素。这种方法使 AI 能够"看到"页面结构。
+
+
 ```javascript
 import { BrowserUseParam, BrowserUseResult } from '../../types/tools.types';
 import { Tool, InputSchema, ExecutionContext } from '../../types/action.types';
@@ -768,6 +774,12 @@ export class BrowserUse implements Tool<BrowserUseParam, BrowserUseResult> {
 
 ```
 #### extract_content 工具
+
+`extract_content` 工具是 Eko 中专门用于提取网页内容的组件，它为 AI 提供了获取当前网页文本内容的能力。
+
+`extractHtmlContent` 优先从语义化结构（如 main 和 article 元素）中提取内容，这些元素通常包含网页的主要信息。如果找不到这些元素，则会回退到使用整个 body 的文本内容。
+
+工具返回的结果包含三个部分：页面标题、URL 和提取的文本内容，使 AI 能够全面了解网页信息。
 ``` javascript
 import { ExtractContentResult } from '../../types/tools.types';
 import { Tool, InputSchema, ExecutionContext } from '../../types/action.types';
@@ -856,6 +868,17 @@ eko.extractHtmlContent = function (element) {
 ```
 
 #### html_script 工具
+`html_script` 工具是 Eko 中的辅助工具集合，提供了一系列用于操作网页 DOM 元素的实用函数，被其他工具如 browser_use 和 find_element_position 调用。
+
+主要功能包括：
+
+`exportFile`：将内容导出为文件并下载
+`xpath`：生成元素的 XPath 路径
+`queryWithXpath`：根据 XPath 查询元素
+`extractOperableElements`：提取页面可交互元素，生成伪 HTML 结构
+`clickOperableElement`：点击指定 ID 的可操作元素
+`getOperableElementRect`：获取元素的位置和尺寸信息
+
 ``` javascript
 import { ElementRect } from '../../types/tools.types';
 
@@ -1117,7 +1140,15 @@ export function getOperableElementRect(id: any): ElementRect | null {
 
 ```
 #### find_element_position 工具
+`find_element_position` 工具是 Eko 中的元素定位组件，它通过自然语言描述来定位网页上的元素，为 AI 提供了一种更自然的方式与网页交互。
 
+该工具的实现依赖于多个步骤：
+1. 首先通过 `screenshot` 函数捕获当前页面截图.
+2. 使用 `extractOperableElements` 提取页面上所有可交互元素，生成伪 HTML 结构.
+3. 将截图、伪 HTML 和用户的任务描述一起发送给 LLM，让 LLM 分析页面内容并确定哪个元素最符合描述.
+4. LLM 返回匹配元素的 ID 后，工具使用 `getOperableElementRect` 函数获取该元素的精确位置和尺寸信息（包括左上角和右下角坐标、宽度和高度）.
+
+这种设计使 AI 能够理解像"点击登录按钮"这样的自然语言指令，并将其转换为精确的网页操作。
 ``` javascript
 import { LLMParameters, Message } from '../../types/llm.types';
 import { Tool, InputSchema, ExecutionContext } from '../../types/action.types';
@@ -1265,156 +1296,13 @@ async function executeWithBrowserUse(
 
 ```
 
-#### element_click 工具
-
-``` javascript
-import { LLMParameters, Message } from '../../types/llm.types';
-import { Tool, InputSchema, ExecutionContext } from '../../types/action.types';
-import { executeScript, getTabId, getWindowId } from '../utils';
-import { extractOperableElements, clickOperableElement } from './html_script';
-import { left_click, screenshot } from './browser';
-import { TaskPrompt } from '../../types/tools.types';
-
-/**
- * Element click
- */
-export class ElementClick implements Tool<TaskPrompt, any> {
-  name: string;
-  description: string;
-  input_schema: InputSchema;
-
-  constructor() {
-    this.name = 'element_click';
-    this.description = 'Click the element through task prompts';
-    this.input_schema = {
-      type: 'object',
-      properties: {
-        task_prompt: {
-          type: 'string',
-          description: 'Task prompt, eg: click search button',
-        },
-      },
-      required: ['task_prompt'],
-    };
-  }
-
-  async execute(context: ExecutionContext, params: TaskPrompt): Promise<any> {
-    if (typeof params !== 'object' || params === null || !params.task_prompt) {
-      throw new Error('Invalid parameters. Expected an object with a "task_prompt" property.');
-    }
-    let result;
-    let task_prompt = params.task_prompt;
-    try {
-      result = await executeWithHtmlElement(context, task_prompt);
-    } catch (e) {
-      console.log(e);
-      result = false;
-    }
-    if (!result) {
-      result = await executeWithBrowserUse(context, task_prompt);
-    }
-    return result;
-  }
-}
-
-async function executeWithHtmlElement(
-  context: ExecutionContext,
-  task_prompt: string
-): Promise<boolean> {
-  let tabId = await getTabId(context);
-  let pseudoHtml = await executeScript(tabId, extractOperableElements, []);
-  let messages: Message[] = [
-    {
-      role: 'user',
-      content: `# Task
-Determine the operation intent based on user input, find the element ID that the user needs to operate on in the webpage HTML, and if the element does not exist, do nothing.
-Output JSON format, no explanation required.
-
-# User input
-${task_prompt}
-
-# Output example (when the element exists)
-{"elementId": "1", "operationType": "click"}
-
-# Output example (when the element does not exist)
-{"elementId": null, "operationType": "unknown"}
-
-# HTML
-${pseudoHtml}
-`,
-    },
-  ];
-  let llm_params: LLMParameters = { maxTokens: 1024 };
-  let response = await context.llmProvider.generateText(messages, llm_params);
-  let content = typeof response.content == 'string' ? response.content : (response.content as any[])[0].text;
-  let json = content.substring(content.indexOf('{'), content.indexOf('}') + 1);
-  let elementId = JSON.parse(json).elementId;
-  if (elementId) {
-    return await executeScript(tabId, clickOperableElement, [elementId]);
-  }
-  return false;
-}
-
-async function executeWithBrowserUse(
-  context: ExecutionContext,
-  task_prompt: string
-): Promise<boolean> {
-  let tabId = await getTabId(context);
-  let windowId = await getWindowId(context);
-  let screenshot_result = await screenshot(windowId, false);
-  let messages: Message[] = [
-    {
-      role: 'user',
-      content: [
-        {
-          type: 'image',
-          source: screenshot_result.image,
-        },
-        {
-          type: 'text',
-          text: 'click: ' + task_prompt,
-        },
-      ],
-    },
-  ];
-  let llm_params: LLMParameters = {
-    maxTokens: 1024,
-    toolChoice: {
-      type: 'tool',
-      name: 'left_click',
-    },
-    tools: [
-      {
-        name: 'left_click',
-        description: 'click element',
-        input_schema: {
-          type: 'object',
-          properties: {
-            coordinate: {
-              type: 'array',
-              description:
-                '(x, y): The x (pixels from the left edge) and y (pixels from the top edge) coordinates.',
-            },
-          },
-          required: ['coordinate'],
-        },
-      },
-    ],
-  };
-  let response = await context.llmProvider.generateText(messages, llm_params);
-  let input = response.toolCalls[0].input;
-  let coordinate = input.coordinate as [number, number];
-  let click_result = await left_click(tabId, coordinate);
-  return click_result;
-}
-
-```
-
-## MetaGPT-X
+## MetaGPT
 
 ## Trae
 
-## MCP 协议
+## Dify
+
+## MCP
 
 ## AI 应用市场
 
