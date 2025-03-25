@@ -1690,6 +1690,20 @@ Trae 采用"AI 增强"而非"AI 替代"的理念，将开发者的专业知识�
 
   <img src="./trae arch.png" alt="trae arch" style="width:100%; max-width:800px;">
 
+Trae 的主进程和 builder 进程通过 WebSocket 进行通信。工作流程主要分为三个阶段：
+
+**Proposal 生成阶段**
+用户输入通过 NLU 进行意图分类和输入改写。然后 Agent 模块利用 RAG 从云端 Milvus 向量数据库中检索相关代码片段。结合各种 prompt、用户上下文和只读工具集，生成一个全面的 proposal （json），包含项目设计决策、核心功能、目录结构、依赖项和用户偏好等。
+
+**Guideline 生成阶段**
+系统根据 proposal 将实现分解为可执行的 guideline 列表（List[str]），创建一个逐步执行计划。
+
+**Action 执行阶段**
+对于每条 guideline，系统生成工具调用（如edit_file、run_command 等）并按顺序执行。每个动作使用完整工具集，并考虑 proposal、当前 guideline、RAG 代码片段和执行历史。流程持续进行直到所有 guideline 完成。
+
+过程中 Agent 的 thought 流式推到前端。所有状态通过 SeaORM 持久化到本地 SQLite 数据库。
+
+
 #### 进程通信
 
 
