@@ -1,0 +1,109 @@
+graph TD
+    %% 主要进程和通信
+    User["用户"] -->|输入| TUI["Trae主进程"]
+    TUI <-->|WebSocket| SM["会话管理模块<br>连接管理"]
+    
+    %% 流入Builder进程的数据流
+    SM -->|消息路由| NLU["NLU模块"]
+    NLU -->|"意图识别"| Intent["意图分类器<br>(生成/修改项目)"]
+    Intent -->|生成/修改项目意图| Rewrite["输入改写器<br>规范化用户输入"]
+    Rewrite -->|"改写后输入"| Agent["Agent模块"]
+    
+    %% Task状态机
+    Agent -->|"状态控制"| TSM["Task状态机"]
+    TSM -->|"生成proposal状态"| PG["Proposal生成器"]
+    TSM -->|"生成guideline状态"| GG["Guideline生成器"]
+    TSM -->|"执行action状态"| AE["Action执行器"]
+    TSM -->|"错误控制状态"| EC["错误处理器"]
+    TSM -->|"open folder状态"| OF["文件窗口触发器<br>(无项目目录时)"]
+    
+    %% RAG系统详情
+    PG <-->|"代码查询"| RAG["RAG系统"]
+    RAG -->|"代码查询"| AST["代码语法树<br>序列化"]
+    AST -->|"向量化"| VDB["云端Milvus<br>向量数据库"]
+    VDB -->|"检索结果"| Reranker["Rerank系统<br>结果重排序"]
+    Reranker -->|"重排结果"| Trim["裁剪算法<br>优化代码片段"]
+    Trim -->|"优化后代码片段"| RAG
+    
+    %% Proposal生成详情
+    UserInput["改写后用户输入"] --> PG
+    PromptP["Proposal阶段Prompt<br>- system prompt<br>- communication guidelines<br>- external API call guidelines<br>- making code change guidelines<br>- safety guidelines<br>- error handling guidelines<br>- memory guidelines<br>- tool calling guidelines"] --> PG
+    Context["上下文<br>- 用户会话历史<br>- 上一轮proposal<br>- response format<br>- proposal示例<br>- 用户输入<br>- 用户当前鼠标位置<br>- 打开的文件"] --> PG
+    ReadTools["只读工具集<br>- list_directory<br>- view_file<br>- grep_search<br>- search_web<br>- find_by_name<br>- codebase_search"] --> PG
+    
+    %% Proposal内容 - 使用真实的checkpoint内容
+    PG -->|"生成"| ProposalContent["Proposal (JSON)<br>1. USER Objective<br>2. Previous Session Summary<br>- Summary of Work Done in Chat<br>- Technical Implementation Overview<br>- Architecture Details<br>- Core Features and Components<br>- Data Persistence<br>- Error Handling<br>- User Preferences and Requests<br>- Next Steps<br>- Existing Blockers<br>3. Code Interaction Summary<br>- Edited Files<br>  - target_file<br>  - lines_modified<br>  - edit_summary<br>- Viewed Files<br>  - absolute_path<br>  - lines_viewed<br>  - learnings<br>- Viewed Code Items<br>  - node_identifier<br>  - learnings<br>  - code_snippets<br>4. File Change Summary<br>- Modified Files<br>- Added Files<br>- Deleted Files<br>- Impact Analysis"]
+    
+    %% Guideline生成详情
+    ProposalContent --> GG
+    PromptP --> GG
+    Context --> GG
+    
+    %% Guideline内容
+    GG -->|"生成"| GuidelineContent["Guidelines (List[str])<br>执行步骤列表"]
+    
+    %% Action执行详情
+    GuidelineContent -->|"每条guideline"| AE
+    PromptA["Action阶段Prompt<br>- system prompt<br>- communication guidelines<br>- debugging guidelines<br>- external API call guidelines<br>- making code change guidelines<br>- safety guidelines<br>- formatting guidelines<br>- planning guidelines<br>- reasoning guidelines<br>- error handling guidelines<br>- memory guidelines<br>- tool calling guidelines<br>- code style guidelines"] --> AE
+    ContextA["Action上下文<br>- 用户会话历史<br>- response format<br>- 用户输入<br>- 用户当前鼠标位置<br>- 打开的文件"] --> AE
+    AllTools["完整工具集<br>- list_directory<br>- view_file<br>- grep_search<br>- edit_file<br>- run_command<br>- create_file<br>- delete_file<br>- search_web<br>- find_by_name<br>- finish<br>- preview<br>- read_url_content<br>- codebase_search"] --> AE
+    ProposalContent --> AE
+    CurrentGuideline["当前guideline"] --> AE
+    RAGCode["guideline相关RAG代码片段"] --> AE
+    ToolHistory["工具执行历史"] --> AE
+    
+    %% Action执行控制
+    AE -->|"工具调用"| ToolExec["工具执行"]
+    ToolExec -->|"执行结果"| NextAction["生成下一个action"]
+    NextAction -->|"循环直到"| Finish["调用finish工具<br>(guideline完成)"]
+    Finish --> NextGuideline["处理下一条guideline"]
+    NextGuideline --> AE
+    
+    %% 所有guideline完成后
+    AE -->|"全部guideline完成"| Preview["调用preview工具<br>项目预览"]
+    Preview -->|"触发"| AsyncTask["异步任务处理器"]
+    
+    %% 异步任务：文件变更总结
+    AsyncTask -->|"分析变更"| FileChanges["文件变更分析器"]
+    FileChanges -->|"生成摘要"| Summary["变更摘要生成器"]
+    Summary -->|"更新"| UpdateProposal["更新Proposal<br>File Change Summary"]
+    UpdateProposal -->|"持久化"| DB
+    
+    %% 错误处理
+    ToolExec -->|"出错"| ErrorInfo["错误信息"]
+    ErrorInfo -->|"作为输入"| NextIteration["下一轮迭代"]
+    
+    %% 持久化
+    PG -->|"持久化proposal"| DB[(本地SQLite<br>SeaORM)]
+    GG -->|"持久化guideline"| DB
+    AE -->|"持久化action"| DB
+    TSM -->|"持久化任务状态"| DB
+    
+    %% 工具调用细节
+    RunCmd["run_command工具"] -->|"需要确认"| UserApproval["用户确认<br>(进程等待)"]
+    UserApproval -->|"确认后"| Execution["实际执行命令"]
+    
+    EditFile["edit_file工具"] -->|"输入"| SmallLLM["小型模型"]
+    TargetFile["目标文件内容"] --> SmallLLM
+    SmallLLM -->|"生成"| FormattedEdit["规范格式<br>便于git操作"]
+    
+    %% 流式消息
+    PG -->|"流式推送"| TUI
+    GG -->|"流式推送"| TUI
+    AE -->|"流式推送"| TUI
+    
+    %% LLM服务
+    Agent <-->|"SSE协议"| LLMS["LLM服务<br>GPT-4o/Claude3.5<br>第三方API"]
+    
+    %% 样式定义
+    classDef process fill:#f9f
+    classDef module fill:#bbf
+    classDef database fill:#bfb
+    classDef content fill:#ffd
+    classDef tools fill:#fbf
+    
+    class TUI,SM,LLMS process
+    class NLU,Agent,TSM,PG,GG,AE,EC,OF,RAG,Reranker,Trim,AST,AsyncTask,FileChanges,Summary,UpdateProposal module
+    class DB,VDB database
+    class ProposalContent,GuidelineContent,PromptP,PromptA,Context,ContextA,CurrentGuideline content
+    class ReadTools,AllTools,ToolExec,Finish,Preview,RunCmd,EditFile tools

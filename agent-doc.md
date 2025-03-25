@@ -1869,7 +1869,44 @@ Action 执行阶段是 Trae Builder 模式的实际落地环节，负责将 Prop
    - 所有Guideline执行完成后，系统会调用preview工具进行项目预览
    - 预览完成后会触发异步任务处理器，进行文件变更分析
 
-Action 执行阶段体现了 Trae 的核心能力：将自然语言需求转化为实际可运行的代码。通过工具调用和完善的安全机制，系统能够高效、安全地实现复杂项目，同时保持与用户的交互和控制。
+Action 执行阶段体现了 Trae 的核心能力：将自然语言需求转化为实际代码。通过工具调用和安全机制，系统能够高效、安全地实现复杂项目，同时保持与用户的交互和控制。
+
+#### Prompt 内容
+
+##### system prompt
+| Prompt组成部分 | 内容描述 |
+|--------------|---------|
+| System Prompt | 定义AI助手身份、能力和行为边界 |
+| Communication Style | 沟通风格指导，包括简洁性、格式化要求 |
+| Tool Calling | 工具调用规则、何时调用工具、工具选择策略 |
+| Making Code Changes | 代码修改规范，确保可运行性、添加必要依赖 |
+| Searching for Code | 代码搜索策略，最大化上下文获取 |
+| Calling External APIs | 外部API调用规则和安全措施 |
+| Memory System | 记忆系统使用指南，何时创建记忆 |
+| Safety Guideline | 安全操作规范，特别是敏感操作，包括需要用户确认的情况|
+| Error Handling Guideline | 异常处理、重试策略、用户交互 |
+| Response Format | 标准JSON格式，包含USER Objective等结构化字段 |
+| 上下文信息 | 用户会话历史、当前文件状态、鼠标位置 |
+
+
+###### 各阶段其他 prompt
+
+| 阶段 | Prompt组成部分 | 内容描述 | 
+|------|--------------|---------| 
+| 输入处理 | NLU处理 | 意图识别、输入规范化 |  
+|  | 输入改写 | 提取关键需求、补充隐含信息、移除歧义 |   
+| Proposal生成 | RAG检索结果 | 相关代码片段、文档引用 | 向量相似度排序 |
+|  | 可用工具集 | 只读工具：list_dir、view_file、grep_search、find_by_name、codebase_search | 
+|  | 工具执行历史 | 之前工具调用的结果和状态 | 累积上下文 | 
+| Guideline生成 | Proposal内容 | 完整的Proposal JSON作为输入 | 
+| Action执行 |  Proposal内容 | 完整的Proposal JSON作为输入 | 
+||当前Guideline | 当前正在执行的Guideline步骤 | 
+|  | RAG相关代码 | 与当前Guideline相关的代码片段 | 针对性检索 |
+|  | 可用工具集 | 完整工具集：propose_code、view_file、view_code_item、run_command、search_web、read_url_content、suggested_responses、create_memory | 
+|  | 工具执行历史 | 之前工具调用的结果和状态 |
+| 文件摘要更新 | 变更文件列表 | 所有被修改、添加、删除的文件 |  
+|  | 代码变更内容 | 关键代码修改的摘要和影响 | 
+
 
 ## Dify
 
