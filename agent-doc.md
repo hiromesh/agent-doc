@@ -1666,7 +1666,7 @@ Trae是由字节跳动开发的国内首个免费的 AI 原生 IDE，旨在通�
 Collaboration = You & Trae
 </div>
 
-<img src="./trae架构.png" alt="trae" style="width:100%; max-width:800px;">
+<img src="./trae_flow.png" alt="trae" style="width:100%; max-width:800px;">
 
 ### 核心功能
 
@@ -1733,7 +1733,7 @@ Builder进程（Rust实现）则专注于 AI 代码生成与项目构建的核�
 
 #### 状态管理
 
-  <img src="./状态管理.png" alt="状态管理" style="width:100%; max-width:800px;">
+  <img src="./task.png" alt="状态管理" style="width:100%; max-width:800px;">
 
 Task 状态机是 Builder 进程的核心控制中枢，负责协调整个 AI 代码生成流程的状态转换与执行逻辑：
 
@@ -1766,7 +1766,7 @@ Task 状态机是 Builder 进程的核心控制中枢，负责协调整个 AI �
 
 #### Code RAG
 
-  <img src="./code rag.png" alt="code_rag" style="width:100%; max-width:800px;">
+  <img src="./coderag.png" alt="code_rag" style="width:100%; max-width:800px;">
 
 Trae 的 Code RAG 系统是一个专门为代码理解和生成优化的检索增强生成系统，采用了多层次的代码表示与处理流程：
 
@@ -1799,7 +1799,7 @@ Trae 的 Code RAG 系统是一个专门为代码理解和生成优化的检索�
 
   <div style="text-align:center">
  <img src="./proposal.png" alt="proposal" 
-  style="width:50%; max-width:800px;">
+  style="width:100%; max-width:800px;">
 </div>
 
 Proposal 生成是 Trae Builder 模式的核心环节，负责将用户的自然语言需求转化为结构化的项目方案。
@@ -1831,6 +1831,11 @@ Proposal 不仅是后续 Guideline 和 Action 的基础，也是用户了解 AI 
 
 #### Guidelines 生成
 
+  <div style="text-align:center">
+ <img src="./guideline.png" alt="guidelines" 
+  style="width:100%; max-width:800px;">
+</div>
+
 Guidelines 生成是连接 Proposal 和具体 Action 执行的桥梁，负责将宏观项目方案拆解为可执行的步骤：
 
 1. **输入来源**：
@@ -1854,6 +1859,7 @@ Guidelines 生成环节确保了 AI 代码生成过程的可控性。通过将�
 
 #### Action 执行
 
+  <img src="./trae_action.png" alt="trae_action" style="width:100%; max-width:800px;">
 Action 执行阶段是 Trae Builder 模式的实际落地环节，负责将 Proposal 和 Guidelines 中的步骤转化为具体的代码实现：
 
 1. **执行流程**：
